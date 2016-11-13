@@ -23,8 +23,7 @@ The standard derivation of PSK modulation follows from standard trigonometric id
              &= I(t) \cos (2\pi f_{c} t) - Q(t) \sin (2\pi f_{c} t) 
 \end{align}
 
-The $I(t)= \cos (\phi(t))$ and $Q(t)=\sin (\phi(t))$ are the inphase and quadrature waveforms.  Its worth pointing out here
-that our phase modulated signal is expressed in terms of amplitude modulation.
+The $I(t)= \cos (\phi(t))$ and $Q(t)=\sin (\phi(t))$ are the inphase and quadrature waveforms.  If you take a step back, you can see an interesting phenomena: phase modulation has been converted to amplitude modulation.
 
 It turns out to be very convenient to represent this last expression in terms of complex waveforms:
 
@@ -43,95 +42,208 @@ The complex formulation is great because it seperates the baseband waveform, $z_
 ## PSK Demodulation
 
 
-### Symbols
+### Bits and Symbols
 
-One of the most siginificant concepts in digital communications is a *symbol*.  Generally speaking, a symbol is the unit of information transmitted every second by a modulator.  This information may be represented on the bit-level, complex phase-level, and/or waveform level.  The correspondance between the bit and complex phase representations of symbols is visualized very effectively with a *constellation diagram*.  Below is the standard constellation for BPSK (left) and QPSK (right).  
-
+The most fundamental unit of information is digital communication is the bit.  Different modulation schemes package up groups of bits into larger pieces of data called symbols.  Below are constellation diagrams for two very common and effective PSK schemes: BPSK and QPSK.  Constellation diagrams provide a compact way of describing the correspondance between bits, symbols, phases, and amplitude levels.    
 
 ![title](images/constellation.png)
 
-Let's interpret these constellations.  Suppose you want to transmit the bit sequence $1,0,0,1,0,1$ through your channel.  If you choose to use BPSK, then the constellation diagram shows that this corresponds to the phase sequence $0,\pi,\pi,0,\pi,0$, or equivalently $+1,-1,-1,+1,-1,+1$.  
-
-Similarly, if you use QPSK, the sequence of symbols is $10,01,01$ which corresponds to the phases 
-$\frac{7\pi}{4}, \frac{3\pi}{4}, \frac{3\pi}{4}$ and the complex phasors 
+The QPSK constellation is a little more interesting so I'll work on describing it in a little more detail.  Let's provide some context.  Suppose you want to transmit the bit sequence 
 
 \begin{equation}
-    \frac{\sqrt{2}}{2} - i\frac{\sqrt{2}}{2}, 
-    -\frac{\sqrt{2}}{2} + i\frac{\sqrt{2}}{2}, 
-    -\frac{\sqrt{2}}{2} + i\frac{\sqrt{2}}{2}
+    b = \left[ 0,1,1,0,1,0,0,1,0,1,0,0,1,1,1,0,1,0\right]
 \end{equation}
+
+through some unspecified channel.  In QPSK, each symbol is made from two consecutive bits.  Our bit sequence is therefore transformed into the following sequence of symbols:
+
+\begin{equation}
+    s = \left[ 01, 10, 10, 01, 01, 00, 11, 10, 10 \right].
+\end{equation}
+
+So far so good.  Now we need to consult the constellation diagram.  If we want to transmit the symbol $01$, then we should choose 
+
+\begin{equation}
+    \phi(t) = \frac{3\pi}{4}, \quad 0\le t \le T
+\end{equation}
+
+which means that the baseband waveform for this time segment should be
+
+\begin{equation}
+    z_{b} (t) = I(t) + i Q(t) 
+              = \cos(\phi(t)) + \sin(\phi(t)) 
+              = -\frac{\sqrt{2}}{2} + i\frac{\sqrt{2}}{2}.
+\end{equation}
+
+The time variable $T$ represents the duration of each symbol.  Its reciprocal is commonly called the symbol rate, or baud rate.
+
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np 
+
+pi = np.pi
+phi = pi*np.array([3.0/4.0, 7.0/4.0, 7.0/4.0, 3.0/4.0, 3.0/4.0, 5.0/4.0, 1.0/4.0, 7.0/4.0, 7.0/4.0])
+x = [0,1,2,3,4,5,6,7,8]
+z = np.exp(1j*phi)
+
+plt.figure(figsize=(10, 6))
+plt.subplot(211)
+plt.step(x, np.real(z), where='post', linestyle='-', alpha=0.5,)
+plt.ylim([-1,1])
+plt.title('Inphase')
+
+plt.subplot(212)
+plt.step(x, np.imag(z), where='post', linestyle='-', alpha=0.5,)
+plt.ylim([-1,1])
+plt.title('Quadrature')
+plt.show()
+
+```
+
+
+![png](Design%20Patterns%20for%20Digital%20Communication_files/Design%20Patterns%20for%20Digital%20Communication_6_0.png)
+
+
+
+```python
+
+```
+
+
+
+
+    array([ 1., -7.])
 
 
 
 ## BPSK
 
 
-```rust
-struct BpskEncoder {
-    level: f64,
-}
-```
 
-```rust
-impl BpskEncoder {
-    fn new(level:f64) -> BpskEncoder {
-        BpskEncoder {level: level}
-    }
-    
-    fn step(&self,symbol:u8) -> f64 {
-        let sample = match symbol {
-                         0 => -level,
-                         1 => level,
-                         _ =>  0.0
-        };
-        sample
-    }
-}
-```
-
-```rust
-struct BpskDecoder {
-    level: f64,
-}
-```
-
-```rust
-impl BpskDecoder {
-    fn new(level:f64) -> BpskDecoder {
-        BpskDecoder {level: level}
-    }
-    
-    fn step(&self,sample:f64) -> u8 {
-        let symbol = if sample >= 0.0 {1} else {0};
-        symbol
-    }
-}
-```
-
-```rust
-struct Channel {
-    snr_db: f64,
-}
-
-impl Channel {
-
-    fn new() -> Channel {
-    
-    }
-    
-    fn step(&self,sample:f64) -> f64 {
+```python
+import collections as coll
+import bitstring
+class Symbolizer(object):
+    def __init__(self,bits_per_symbol=1):
+        self.bits_per_symbol = bits_per_symbol
+        self.state = coll.deque([0] * bits_per_symbol)
+        self.cnt = 0
+    def step(self,bit):
+        head = self.state.popleft()
+        self.state.append(bit)
+        self.cnt = (self.cnt + 1) % self.bits_per_symbol
+        if self.cnt == 0:
+            out = self.state.copy()
+        else:
+            out = None        
+        return out
         
+```
+
+
+    ---------------------------------------------------------------------------
+
+    ImportError                               Traceback (most recent call last)
+
+    <ipython-input-35-dba50697064c> in <module>()
+          1 import collections as coll
+    ----> 2 import bitstring
+          3 class Symbolizer(object):
+          4     def __init__(self,bits_per_symbol=1):
+          5         self.bits_per_symbol = bits_per_symbol
+    
+
+    ImportError: No module named 'bitstring'
+
+
+
+```python
+def symbol_map(bits):
+    foo = Symbolizer(2)
+    output = []
+    for bi in bits:
+        y = foo.step(bi)
+        if y != None:
+            temp = list(y)
+            
+            output += [temp]
+    return output
+
+symbol_map([1,0,1,0,0,0,1,1,0,0])
+
+```
+
+
+    ---------------------------------------------------------------------------
+
+    TypeError                                 Traceback (most recent call last)
+
+    <ipython-input-37-0746ddd26c76> in <module>()
+         12 symbol_map([1,0,1,0,0,0,1,1,0,0])
+         13 
+    ---> 14 "".join([1,2,3])
+    
+
+    TypeError: sequence item 0: expected str instance, int found
+
+
+```rust
+use std::collections::VecDeque;
+```
+
+```rust
+struct Symbolizer {
+    bits_per_symbol:u8,
+    cnt:u8,
+    state: VecDeque<u8>,
+}
+
+
+impl Symbolizer {
+    fn init_state(len:u8) -> VecDeque<u8> {
+        let mut state: VecDeque<u8> = VecDeque::new();
+        for i in 0..len {
+            state.push_back(0);
+        }
+        state
+    }
+    
+    fn new(bits_per_symbol:u8) -> Symbolizer {
+        Symbolizer {
+            bits_per_symbol: bits_per_symbol,
+            cnt: 0,
+            state: Symbolizer::init_state(bits_per_symbol)
+        }
+    }
+    
+    fn step(&mut self, bit: u8) -> Option<VecDeque<u8>> {
+        self.state.push_back(bit);
+        let head = self.state.pop_front();
+        self.cnt = (self.cnt + 1) % self.bits_per_symbol;
+        out = if (self.cnt == 0) {Some (self.state.clone()) } else {None};
+        out
     }
 }
 ```
 
-```rust
-fn run() {
-    
-}
+
+```python
+foo = Symbolizer(2)
+x = foo.step(1)
+y = foo.step(0)
+z = foo.step(0)
+w = foo.step(0)
+print(x)
+print(y)
+print(z)
+print(w)
 ```
 
-
+    None
+    deque([1, 0])
+    None
+    deque([0, 0])
+    
 
 Before we discuss the algorithmic details of differential encoding/decoding, it's important to motivate the reason for why it might be considered.
 
